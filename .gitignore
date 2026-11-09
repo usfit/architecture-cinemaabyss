@@ -154,3 +154,6 @@ go.work
 
 # Postman tests reports
 tests/postman/reports/
+
+### Черновики ###
+drafts/

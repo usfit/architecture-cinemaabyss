@@ -1,0 +1,120 @@
+@startuml
+title CinemaAbyss Container C4 Diagram
+
+top to bottom direction
+skinparam linetype polyline
+skinparam nodesep 80
+skinparam ranksep 100
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+Person(user, "Пользователь", "Заходит в кинотеатр через web, smart tv или mobile")
+
+System_Ext(royalty, "Loyalty Platforms", "Сервисы лояльности и маркетплейсы")
+System_Ext(payment, "Payment Systems", "Платёжные системы")
+System_Ext(recommendation, "Recommendation System", "Внешняя рекомендательная система")
+System_Ext(content_provider, "Content Provider", "Поставщики контента")
+ContainerDb(video_cloud, "Video Storage", "S3", "Хранение видеофайлов")
+
+System_Boundary(cinema, "КиноБездна", "Онлайн-кинотеатр") {
+  Boundary(clients, "Клиенты", "Веб, мобильные и смарт тв приложения") {
+    Container(web_app, "Web-приложение", "React", "Веб-приложение для просмотра фильмов")
+    Container(mobile_app, "Mobile-приложение", "React Native", "Мобильное приложение для просмотра фильмов")
+    Container(smart_tv_app, "Smart TV-приложение", "React Native", "Приложение для смарт тв для просмотра фильмов")
+  }
+
+  Boundary(access, "Вход и пользователи") {
+    Container(api, "API Gateway", "Nginx", "Единая точка входа, маршрутизация, проверка токенов")
+
+    Container(kc, "Keycloak", "Keycloak", "Аутентификация, выдача токенов")
+    ContainerDb(kc_db, "Keycloak DB", "PostgreSQL")
+
+    Container(user_service, "User Service", "Go", "Управление пользователями, интеграция с Keycloak, полученные рекомендации")
+    ContainerDb(user_db, "User DB", "PostgreSQL")
+
+    Container(legacy_monolith, "Legacy Monolith", "Go + PostgreSQL", "Старое монолитное приложение, которое постепенно заменяется микросервисами")
+  }
+
+  Boundary(services, "Доменные сервисы") {
+    Container(payment_service, "Payment Service", "Go", "Обработка платежей, интеграция с платёжными системами")
+    ContainerDb(payment_db, "Payment DB", "PostgreSQL")
+
+    Container(subscription_service, "Subscription Service", "Go", "Управление подписками, интеграция с платёжными системами")
+    ContainerDb(subscription_db, "Subscription DB", "PostgreSQL")
+
+    Container(discount_service, "Discount Service", "Go", "Управление скидками, промокодами и правила их применения")
+    ContainerDb(discount_db, "Discount DB", "PostgreSQL")
+
+    Container(movie_service, "Movie Service", "Go", "каталог и метаданные фильмов")
+    ContainerDb(movie_db, "Movie DB", "PostgreSQL")
+
+    Container(video_service, "Video Service", "Go", "Хранение и трансляция видео")
+    ContainerDb(video_db, "Video DB", "PostgreSQL")
+
+    Container(user_activity_service, "User Activity Service", "Go", "Сбор и хранение данных о действиях пользователей")
+    ContainerDb(user_activity_db, "User Activity DB", "PostgreSQL")
+  }
+
+  Boundary(queues, "Брокеры сообщений") {
+    ContainerQueue(kafka, "Kafka", "Kafka", "События и команды между сервисами")
+    ContainerQueue(rabbit, "RabbitMQ", "RabbitMQ", "Существующая интеграция с внешней рекомендательной системой")
+  }
+}
+
+Rel(user, web_app, "Смотрит каталог, оформляет подписку и смотрит фильмы", "HTTPS")
+Rel(user, mobile_app, "Смотрит каталог, оформляет подписку и смотрит фильмы", "HTTPS")
+Rel(user, smart_tv_app, "Выбирает и смотрит фильмы", "HTTPS")
+
+Rel(web_app, api, "Запрашивает каталог, профиль и рекомендации; оформляет подписку, управляет избранным и запускает просмотр", "HTTPS/REST")
+Rel(mobile_app, api, "Запрашивает каталог, профиль и рекомендации; оформляет подписку, управляет избранным и запускает просмотр", "HTTPS/REST")
+Rel(smart_tv_app, api, "Запрашивает каталог, рекомендации и историю; запускает просмотр и сохраняет прогресс", "HTTPS/REST")
+
+Rel(api, kc, "Проверка токена", "OpenID Connect")
+Rel(kc, kc_db, "Чтение/запись данных", "SQL")
+
+Rel(api, payment_service, "Запросы статуса платежей и результаты оплаты", "HTTPS/REST")
+Rel(api, subscription_service, "Управление подписками", "HTTPS/REST")
+Rel(api, discount_service, "Доступные скидки и проверка промокодов", "HTTPS/REST")
+Rel(api, movie_service, "Запросы каталога, поиска и метаданных фильмов", "HTTPS/REST")
+Rel(api, video_service, "Получение ссылки для воспроизведения", "HTTPS/REST")
+Rel(api, user_activity_service, "Управление действиями пользователей", "HTTPS/REST")
+Rel(api, user_service, "Управление профилями и получение персональных рекомендаций", "HTTPS/REST")
+Rel(api, legacy_monolith, "Функции, ещё не перенесённые в микросервисы", "HTTPS/REST")
+Rel(royalty, api, "Партнёрские предложения и промокоды", "HTTPS/REST")
+
+Rel(payment_service, payment_db, "SQL")
+Rel(subscription_service, subscription_db, "SQL")
+Rel(user_service, user_db, "SQL")
+Rel(discount_service, discount_db, "SQL")
+Rel(movie_service, movie_db, "SQL")
+Rel(video_service, video_db, "SQL")
+Rel(user_activity_service, user_activity_db, "SQL")
+
+Rel(subscription_service, discount_service, "Проверяет скидку", "HTTPS/REST")
+Rel(subscription_service, payment_service, "Создаёт платёж для подписки с итоговой суммой", "HTTPS/REST")
+Rel(payment_service, payment, "Интеграция с платёжными системами", "HTTPS/REST")
+Rel(payment, api, "Отправляет уведомления о платёжных операциях", "HTTPS/REST")
+
+Rel(video_service, subscription_service, "Проверяет наличие подписки для доступа к видео", "HTTPS/REST")
+Rel(video_service, content_provider, "Создает сессию для воспроизведения видео", "HTTPS/REST")
+Rel(video_service, video_cloud, "Обращается к видеофайлам через S3 API", "HTTPS/S3 API")
+Rel(web_app, video_cloud, "Загружает видео по подписанной ссылке", "HTTPS")
+Rel(mobile_app, video_cloud, "Загружает видео по подписанной ссылке", "HTTPS")
+Rel(smart_tv_app, video_cloud, "Загружает видео по подписанной ссылке", "HTTPS")
+
+Rel(video_service, movie_service, "Получает доступные источники фильма и их идентификаторы", "HTTPS/REST")
+Rel(web_app, content_provider, "Получает видео по выданной ссылке", "HTTPS")
+Rel(mobile_app, content_provider, "Получает видео по выданной ссылке", "HTTPS")
+Rel(smart_tv_app, content_provider, "Получает видео по выданной ссылке", "HTTPS")
+
+Rel(payment_service, kafka, "Публикует события о платёжных операциях", "Kafka")
+BiRel(subscription_service, kafka, "Получает результаты оплаты; публикует события изменения подписки", "Kafka protocol")
+Rel(user_activity_service, kafka, "Публикует события о действиях пользователей", "Kafka")
+BiRel(movie_service, kafka, "Получает оценки для пересчёта рейтинга; публикует изменения метаданных", "Kafka protocol")
+
+BiRel(rabbit, recommendation, "Передача действий пользователей и запросов обновления; получение персональных подборок", "AMQP")
+Rel(user_activity_service, rabbit, "Оценки, изменения избранного и история просмотров", "AMQP")
+BiRel(user_service, rabbit, "Запросы обновления персональных подборок и получение результатов для сохранения", "AMQP")
+
+
+@enduml
